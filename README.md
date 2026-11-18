@@ -87,6 +87,26 @@ pip install -e .            # add [api] to summarize with the Claude API
    carryover unpack thesis.carryover --zip
    ```
 
+### Moving many projects at once
+
+The export doesn't say which chat belongs to which project, but each project's
+page on claude.ai does. So:
+
+```bash
+carryover plan EXPORT -o plan.txt
+```
+
+This writes `plan.txt`, with one section per project pre-filled with guesses.
+Open each project on claude.ai and fix its section: move lines, delete wrong
+ones, or paste in chat titles copied from the project page. Then:
+
+```bash
+carryover pack-all EXPORT plan.txt -o moved/ --zip
+```
+
+You get one bundle and one import kit per project, plus a "General chats" kit
+for chats outside any project. Chats under `## Skip` are left out.
+
 ### No "Export data" button?
 
 If your account belongs to an organization (Team, Enterprise or Education),
@@ -131,6 +151,8 @@ organization's rules on taking its data elsewhere first.
 | `template conversation\|project` | Print a summary template |
 | `summarize BUNDLE --api [--model] [--effort] [--workers] [--force]` | Fill summaries with the Claude API |
 | `unpack BUNDLE [-o DIR] [--no-transcripts] [--chunk-chars N] [--zip]` | Bundle → claude.ai import kit |
+| `plan EXPORT [-o plan.txt]` | Draft which chats go with which project (editable) |
+| `pack-all EXPORT PLAN -o DIR [--zip] [--no-kits]` | Bundles + import kits for every project in the plan |
 | `handoff-prompt` | Prompt to paste into the old project (no-export mode) |
 | `from-manual --name N [--instructions F] [--handoff F] [--knowledge P] [--memory F] [--chat P]` | Hand-copied pieces → bundle |
 

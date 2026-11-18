@@ -7,6 +7,10 @@
     carryover summarize BUNDLE --api            fill summaries via the Claude API
     carryover unpack    BUNDLE                  bundle -> claude.ai import kit
 
+Many projects at once:
+    carryover plan      EXPORT -o plan.txt      draft which chats go with which project
+    carryover pack-all  EXPORT plan.txt -o DIR  bundles + import kits for every project
+
 No "Export data" button (e.g. an organization account)?
     carryover handoff-prompt                    prompt to paste into the old project
     carryover from-manual --name NAME ...       hand-copied pieces -> bundle
@@ -27,8 +31,10 @@ from carryover.bundle import Bundle, BundleError, write_bundle, zip_dir
 from carryover.summarize import (CONVERSATION_TEMPLATE, DEFAULT_EFFORT, DEFAULT_MODEL,
                                  PROJECT_CONTEXT_TEMPLATE, SummarizeError, make_api_caller,
                                  summarize_bundle)
+from carryover.adapters.claude_ai import Project
+from carryover.plan import GENERAL, read_plan, write_plan
 from carryover.manual import HANDOFF_PROMPT, manual_chats, manual_project
-from carryover.util import excerpt, parse_day, short_day, slugify
+from carryover.util import excerpt, parse_day, short_day, slugify, unique_name
 
 
 def _err(msg: str) -> int:
@@ -236,6 +242,80 @@ def cmd_unpack(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# plan / pack-all
+# --------------------------------------------------------------------------- #
+
+def cmd_plan(args) -> int:
+    if os.path.exists(args.output) and not args.force:
+        return _err(f"{args.output} already exists (use --force to replace it; your edits would be lost)")
+    exp = ClaudeExport(args.export)
+    res = write_plan(exp, args.output)
+    print(f"Plan written: {args.output}")
+    for name, n in res["projects"].items():
+        print(f"  {n:>4} chat(s) guessed for {name}")
+    print(f"  {res['general']:>4} chat(s) matched no project (under '{GENERAL}')")
+    print("Next: open the file, compare each project with its chat list on claude.ai, fix it, then run\n"
+          f"  carryover pack-all EXPORT {args.output} -o OUTPUT_FOLDER")
+    return 0
+
+
+def cmd_pack_all(args) -> int:
+    exp = ClaudeExport(args.export, include_thinking=args.include_thinking)
+    plan = read_plan(exp, args.plan)
+    problems = []
+    for no, line in plan.unmatched:
+        problems.append(f"line {no}: no chat with this id or title: {line}")
+    for no, line in plan.ambiguous:
+        problems.append(f"line {no}: several chats share this title; use the 8-character id instead: {line}")
+    for cid, names in plan.duplicates:
+        problems.append(f"chat {cid[:8]} is listed under several sections: {', '.join(names)}")
+    if problems:
+        print("Problems in the plan:", file=sys.stderr)
+        for p in problems:
+            print("  " + p, file=sys.stderr)
+        if not args.ignore_problems:
+            return _err("fix the plan (or pass --ignore-problems to skip those lines)")
+
+    projects = {p.id: p for p in exp.projects}
+    os.makedirs(args.output, exist_ok=True)
+    taken: set = set()
+    made = []
+    for sec in plan.sections:
+        if sec.kind == "skip":
+            continue
+        if sec.kind == "general":
+            if not sec.chats:
+                continue
+            project = Project(id="general", name=GENERAL,
+                              description="Chats carried over from the old account that were not in a project.",
+                              instructions="", docs=[], created_at=None, updated_at=None)
+        else:
+            project = projects[sec.project_id]
+        slug = unique_name(slugify(project.name, 40), taken)
+        bundle_dir = os.path.join(args.output, slug + ".carryover")
+        account_memory = exp.account_memory if (args.include_account_memory and sec.kind == "general") else ""
+        write_bundle(bundle_dir, project, sec.chats,
+                     source={"platform": PLATFORM, "export_file": os.path.basename(args.export.rstrip("/"))},
+                     account_memory=account_memory, options={"include_thinking": args.include_thinking},
+                     overwrite=args.force)
+        line = f"  {project.name}: {len(project.docs)} file(s), {len(sec.chats)} chat(s)"
+        if not args.no_kits:
+            with Bundle(bundle_dir) as b:
+                kit_dir = os.path.join(args.output, slug + "-kit")
+                build_kit(b, kit_dir, include_transcripts=not args.no_transcripts, overwrite=args.force)
+            if args.zip:
+                zip_dir(kit_dir, kit_dir + ".zip")
+            line += f" -> {kit_dir}"
+        print(line)
+        made.append(bundle_dir)
+    print(f"Done: {len(made)} project(s) in {args.output}")
+    if not args.no_kits:
+        print("Each *-kit folder has a START_HERE.md for the new account. The context files are basic\n"
+              "until chats are summarized (carryover summarize BUNDLE --api, then unpack again).")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # no-export mode
 # --------------------------------------------------------------------------- #
 
@@ -342,6 +422,26 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--zip", action="store_true", help="also write <kit>.zip")
     s.add_argument("--force", action="store_true", help="replace an existing kit")
     s.set_defaults(func=cmd_unpack)
+
+    s = sub.add_parser("plan", help="draft which chats go with which project (editable file)")
+    s.add_argument("export")
+    s.add_argument("-o", "--output", default="plan.txt", help="plan file to write (default plan.txt)")
+    s.add_argument("--force", action="store_true", help="replace an existing plan file")
+    s.set_defaults(func=cmd_plan)
+
+    s = sub.add_parser("pack-all", help="pack every project in a plan file and build import kits")
+    s.add_argument("export")
+    s.add_argument("plan", help="plan file from `carryover plan` (edited)")
+    s.add_argument("-o", "--output", required=True, help="folder for all bundles and kits")
+    s.add_argument("--no-kits", action="store_true", help="only write bundles")
+    s.add_argument("--no-transcripts", action="store_true", help="leave full transcripts out of kits")
+    s.add_argument("--zip", action="store_true", help="also zip each kit")
+    s.add_argument("--include-account-memory", action="store_true",
+                   help="add account-wide memory to the General chats kit")
+    s.add_argument("--include-thinking", action="store_true")
+    s.add_argument("--ignore-problems", action="store_true", help="skip plan lines that match no chat")
+    s.add_argument("--force", action="store_true", help="replace existing bundles and kits")
+    s.set_defaults(func=cmd_pack_all)
 
     s = sub.add_parser("handoff-prompt", help="print the prompt to paste into the old project (no-export mode)")
     s.set_defaults(func=cmd_handoff_prompt)

@@ -392,3 +392,51 @@ def test_manifest_without_parts_explains(tmp_path, capsys):
     assert main(["inspect", manifest]) == 2
     err = capsys.readouterr().err
     assert "download list" in err and "projects-000.zip" in err and "conversations-000.zip" in err
+
+
+# --------------------------------------------------------------------------- plan / pack-all
+
+def test_plan_suggests_and_pack_all(export_zip, tmp_path, capsys):
+    plan = str(tmp_path / "plan.txt")
+    assert main(["plan", export_zip, "-o", plan]) == 0
+    text = open(plan).read()
+    assert "## Project: Thesis Writing" in text and "## Project: Cooking" in text
+    thesis_part = text.split("## Project: Thesis Writing")[1].split("## Project:")[0]
+    assert "Thesis: chapter 3 structure" in thesis_part  # keyword guess from project name
+    assert main(["plan", export_zip, "-o", plan]) == 2  # never overwrite edits silently
+
+    # user edits: move pasta chat to Cooking by pasting its bare title; skip lit review
+    edited = []
+    for line in text.splitlines():
+        if "Pasta recipe" in line or "Literature review" in line:
+            continue
+        edited.append(line)
+        if line.startswith("# id: 2222"):
+            edited.append("Pasta recipe")
+            edited.append("Last message 3 days ago")  # noise copied from the web page
+    edited = "\n".join(edited).replace("\n## Skip\n", "\n## Skip\nc0000003\n")
+    open(plan, "w").write(edited)
+
+    out = str(tmp_path / "out")
+    assert main(["pack-all", export_zip, plan, "-o", out, "--zip"]) == 0
+    cooking = Bundle(os.path.join(out, "cooking.carryover"))
+    assert [c["title"] for c in cooking.conversations] == ["Pasta recipe"]
+    thesis = Bundle(os.path.join(out, "thesis-writing.carryover"))
+    assert [c["title"] for c in thesis.conversations] == ["Thesis: chapter 3 structure"]
+    assert os.path.isfile(os.path.join(out, "thesis-writing-kit", "START_HERE.md"))
+    assert zipfile.is_zipfile(os.path.join(out, "cooking-kit.zip"))
+    assert not os.path.exists(os.path.join(out, "general-chats.carryover"))  # nothing left over
+
+
+def test_pack_all_reports_problems(export_zip, tmp_path, capsys):
+    plan = tmp_path / "plan.txt"
+    plan.write_text("## Project: Cooking\n# id: 22222222-aaaa-bbbb-cccc-000000000002\n"
+                    "No such chat title\nc0000002\n\n## General chats\nc0000002\n")
+    out = str(tmp_path / "out")
+    assert main(["pack-all", export_zip, str(plan), "-o", out]) == 2
+    err = capsys.readouterr().err
+    assert "No such chat title" in err and "several sections" in err
+    plan.write_text("## Project: Cooking\nNo such chat title\nc0000002\n## General chats\nc0000001\n")
+    assert main(["pack-all", export_zip, str(plan), "-o", out, "--ignore-problems"]) == 0
+    general = Bundle(os.path.join(out, "general-chats.carryover"))
+    assert [c["title"] for c in general.conversations] == ["Thesis: chapter 3 structure"]
