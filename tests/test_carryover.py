@@ -460,3 +460,13 @@ def test_plan_from_pages(export_zip, tmp_path, capsys):
     assert "Thesis: chapter 3 structure" in thesis and "Literature review GNN" in thesis  # cut-off title
     assert "Pasta recipe" in text.split("## Project: Cooking")[1].split("## General")[0]
     assert main(["pack-all", export_zip, plan, "-o", str(tmp_path / "out"), "--no-kits"]) == 0
+
+
+def test_plan_star_takes_remaining_chats(export_zip, tmp_path):
+    plan = tmp_path / "plan.txt"
+    plan.write_text("## Project: Cooking\n# id: 22222222-aaaa-bbbb-cccc-000000000002\nc0000002 | Pasta recipe\n\n"
+                    "## General chats\n*\n\n## Skip\nc0000003\n")
+    out = str(tmp_path / "out")
+    assert main(["pack-all", export_zip, str(plan), "-o", out, "--no-kits"]) == 0
+    general = Bundle(os.path.join(out, "general-chats.carryover"))
+    assert [c["title"] for c in general.conversations] == ["Thesis: chapter 3 structure"]

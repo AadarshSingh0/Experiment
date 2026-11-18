@@ -170,6 +170,7 @@ def write_plan(export, path: str, groups: Optional[Dict[str, List]] = None) -> d
         "# wrong ones, or paste chat titles copied from the project page.",
         "# A line can be an 8-character chat id (as below) or an exact chat title.",
         f"# '## {GENERAL}' are moved as one extra project. '## {SKIP}' are not moved.",
+        "# A line with just * means: every chat not listed in any other section.",
         "# Delete a whole '## Project:' section to leave that project out.",
         "# Then run:  carryover pack-all EXPORT THIS_FILE -o OUTPUT_FOLDER",
         "",
@@ -197,6 +198,7 @@ class PlanSection:
     name: str
     project_id: Optional[str] = None
     chats: List = field(default_factory=list)
+    rest: bool = False  # a "*" line: every chat not listed in any other section
 
 
 @dataclass
@@ -243,6 +245,9 @@ def read_plan(export, path: str) -> Plan:
             continue
         if current is None:
             raise ValueError(f"{path}:{no}: chat listed before any '## ' section")
+        if line == "*":
+            current.rest = True
+            continue
         m = _ID_LINE.match(line)
         hits = by_prefix.get(m.group(1).lower(), []) if m else []
         if not hits:
@@ -264,6 +269,13 @@ def read_plan(export, path: str) -> Plan:
                 raise ValueError(f"plan section 'Project: {s.name}' does not match exactly one project; "
                                  "keep its '# id:' line")
             s.project_id = matches[0].id
+
+    rest = [s for s in sections if s.rest]
+    if len(rest) > 1:
+        raise ValueError("only one section may contain the '*' (all remaining chats) line")
+    if rest:
+        listed = {c.id for s in sections for c in s.chats}
+        rest[0].chats += [c for c in export.conversations if c.messages and c.id not in listed]
 
     owners: Dict[str, List[str]] = {}
     for s in sections:
