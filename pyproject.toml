@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carryover"
+version = "0.1.0"
+description = "Move an AI project (instructions, knowledge, memory, chat history) from one account to another."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Only needed for `carryover summarize --api`.
+api = ["anthropic>=2.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+carryover = "carryover.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+build/
+dist/
+
+# Never commit personal data: exports, bundles and import kits stay local.
+exports/
+bundles/
+kits/
+*.carryover/
+*.carryover.zip
+*-import-kit/
+data-*.zip
