@@ -35,6 +35,7 @@ _STOP = set("""
 a an and are as at be but by for from has have how i in into is it its me my of on or our so that the
 this to was we what when where which who why will with you your project projects chat chats new
 using use help about can do does get make need want work working paper notes misc untitled
+http https www com org net html github gitlab tree blob main master src modules module
 """.split())
 
 _ID_LINE = re.compile(r"^([0-9a-f]{8})(?:[0-9a-f-]{0,28})\s*(?:\||$)", re.IGNORECASE)
