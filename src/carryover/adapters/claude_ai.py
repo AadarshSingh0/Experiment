@@ -42,29 +42,143 @@ class ExportError(Exception):
 # Loading
 # --------------------------------------------------------------------------- #
 
-def _load_json_files(path: str) -> dict:
-    """Return {basename: parsed_json} for the JSON files we care about."""
-    wanted = {"projects.json", "conversations.json", "memories.json", "users.json"}
-    found: dict = {}
+_CATEGORY_FILES = {"projects": "projects.json", "conversations": "conversations.json",
+                   "memories": "memories.json", "users": "users.json"}
+
+
+def _category(name: str) -> Optional[str]:
+    n = name.lower().replace("\\", "/").rsplit("/", 1)[-1]
+    if "design" in n or "frame" in n:
+        return None
+    if "conversation" in n:
+        return "conversations"
+    if "project" in n:
+        return "projects"
+    if "memor" in n:
+        return "memories"
+    if n.startswith("user") or "users" in n:
+        return "users"
+    return None
+
+
+def _category_by_shape(obj) -> Optional[str]:
+    sample = obj[0] if isinstance(obj, list) and obj else obj
+    if not isinstance(sample, dict):
+        return None
+    if "chat_messages" in sample:
+        return "conversations"
+    if "prompt_template" in sample or "docs" in sample:
+        return "projects"
+    if "conversations_memory" in sample or "project_memories" in sample:
+        return "memories"
+    if "email_address" in sample:
+        return "users"
+    return None
+
+
+def _parse(name: str, raw: bytes):
+    text = raw.decode("utf-8-sig")
+    if name.lower().endswith(".jsonl"):
+        return [json.loads(line) for line in text.splitlines() if line.strip()]
+    return json.loads(text)
+
+
+def _iter_json(path: str, hint: Optional[str] = None):
+    """Yield (name, category hint from enclosing zip, raw bytes) for every JSON
+    file in a file, folder or (nested) zip."""
     if os.path.isdir(path):
-        for root, _dirs, files in os.walk(path):
-            for name in files:
-                if name in wanted and name not in found:
-                    with open(os.path.join(root, name), "r", encoding="utf-8") as fh:
-                        found[name] = json.load(fh)
+        for root, dirs, files in os.walk(path):
+            dirs.sort()
+            for name in sorted(files):
+                yield from _iter_json(os.path.join(root, name), hint)
+        return
+    low = path.lower()
+    if low.endswith((".json", ".jsonl")):
+        with open(path, "rb") as fh:
+            yield path, hint, fh.read()
     elif zipfile.is_zipfile(path):
-        with zipfile.ZipFile(path) as zf:
-            for info in zf.infolist():
-                base = info.filename.rsplit("/", 1)[-1]
-                if base in wanted and base not in found:
-                    with zf.open(info) as fh:
-                        found[base] = json.loads(fh.read().decode("utf-8"))
-    else:
-        raise ExportError(f"{path} is neither a directory nor a zip file")
+        with open(path, "rb") as fh:
+            yield from _iter_zip(fh.read(), _category(path) or hint)
+
+
+def _iter_zip(data: bytes, hint: Optional[str]):
+    import io
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for info in zf.infolist():
+            name = info.filename
+            if info.is_dir() or "__MACOSX" in name:
+                continue
+            low = name.lower()
+            if low.endswith((".json", ".jsonl")):
+                yield name, hint, zf.read(info)
+            elif low.endswith(".zip"):
+                yield from _iter_zip(zf.read(info), _category(name) or hint)
+
+
+def _is_export_manifest(obj) -> bool:
+    return isinstance(obj, dict) and isinstance(obj.get("data_files"), list)
+
+
+def _load_json_files(path: str) -> dict:
+    """Collect projects / conversations / memories / users from any export
+    layout: the classic single zip, an unzipped folder, or the newer split
+    export (a manifest .json listing several ``<category>-NNN.zip`` parts)."""
+    if not os.path.exists(path):
+        raise ExportError(f"{path} does not exist")
+    sources = [path]
+    if os.path.isfile(path) and path.lower().endswith(".json"):
+        try:
+            with open(path, "rb") as fh:
+                top = _parse(path, fh.read())
+        except ValueError as exc:
+            raise ExportError(f"{path} is not valid JSON") from exc
+        if _is_export_manifest(top):
+            folder = os.path.dirname(os.path.abspath(path))
+            sources, missing = [], []
+            for part in top["data_files"]:
+                fname = part.get("filename") or ""
+                cat = _category(part.get("category", "") + "-" + fname)
+                full = os.path.join(folder, fname)
+                if os.path.isfile(full):
+                    sources.append(full)
+                elif cat in ("projects", "conversations", "memories"):
+                    missing.append(fname)
+            if missing:
+                raise ExportError(
+                    "this is the export's download list, not the data itself. Download these parts "
+                    "from the links inside it (open each link in a browser signed in to that account) "
+                    f"and put them in {folder}:\n  " + "\n  ".join(missing))
+
+    found: dict = {}
+    seen_ids: dict = {"projects": set(), "conversations": set()}
+    for src in sources:
+        if not (os.path.isdir(src) or zipfile.is_zipfile(src) or src.lower().endswith((".json", ".jsonl"))):
+            raise ExportError(f"{src} is neither a folder, a zip nor a JSON file")
+        for name, hint, raw in _iter_json(src):
+            try:
+                obj = _parse(name, raw)
+            except ValueError:
+                continue
+            if _is_export_manifest(obj):
+                continue
+            cat = _category(name) or hint or _category_by_shape(obj)
+            if cat is None or _category_by_shape(obj) not in (None, cat):
+                cat = _category_by_shape(obj)
+            if cat is None:
+                continue
+            items = obj if isinstance(obj, list) else [obj]
+            bucket = found.setdefault(_CATEGORY_FILES[cat], [])
+            for item in items:
+                if cat in seen_ids and isinstance(item, dict):
+                    uid = item.get("uuid") or item.get("id")
+                    if uid:
+                        if uid in seen_ids[cat]:
+                            continue
+                        seen_ids[cat].add(uid)
+                bucket.append(item)
     if "projects.json" not in found and "conversations.json" not in found:
         raise ExportError(
-            f"{path} does not look like a claude.ai export "
-            "(no projects.json or conversations.json found)"
+            f"{path} does not look like a claude.ai export (no projects or conversations found)"
         )
     return found
 

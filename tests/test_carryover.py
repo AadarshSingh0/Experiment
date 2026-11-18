@@ -344,3 +344,51 @@ def test_from_manual_handoff_only(tmp_path):
     assert "00_PROJECT_CONTEXT.md" in instr and "01_CHAT_SUMMARIES" not in instr
     assert main(["from-manual", "--name", "Y", "--knowledge", str(tmp_path / "missing"),
                  "-o", str(tmp_path / "c")]) == 2
+
+
+# --------------------------------------------------------------------------- split (manifest) exports
+
+def _write_split_export(folder, include=("projects", "conversations", "memories", "light_metadata")):
+    from conftest import sample_export
+    data = sample_export()
+    folder.mkdir(exist_ok=True)
+    files = []
+    for i, cat in enumerate(["light_metadata", "projects", "memories", "design_chats", "frames", "conversations"]):
+        fname = f"{cat}-000.zip"
+        files.append({"batch_index": i, "export_url": "https://example.invalid/x", "category": cat,
+                      "part": 0, "filename": fname})
+        if cat not in include:
+            continue
+        with zipfile.ZipFile(folder / fname, "w") as zf:
+            if cat == "projects":  # one JSON per project, generic names
+                for j, proj in enumerate(data["projects.json"]):
+                    zf.writestr(f"export/{j:04d}.json", json.dumps(proj))
+            elif cat == "conversations":  # JSON Lines
+                zf.writestr("conversations.jsonl", "\n".join(json.dumps(c) for c in data["conversations.json"]))
+            elif cat == "memories":
+                zf.writestr("memories.json", json.dumps(data["memories.json"][0]))
+            else:
+                zf.writestr("users.json", json.dumps(data["users.json"]))
+    manifest = folder / "manifest-abc-2026-11-18.json"
+    manifest.write_text(json.dumps({"instructions": "Download each file", "total_files": 6,
+                                    "data_files": files, "version": "1.0"}))
+    return str(manifest)
+
+
+def test_split_export_via_manifest_and_folder(tmp_path):
+    manifest = _write_split_export(tmp_path / "dl")
+    for path in (manifest, str(tmp_path / "dl")):
+        exp = ClaudeExport(path)
+        assert [p.name for p in exp.projects] == ["Thesis Writing", "Cooking"]
+        assert len(exp.conversations) == 4
+        assert exp.project_memory(PROJECT_ID).startswith("Thesis deadline")
+    out = str(tmp_path / "b")
+    assert main(["pack", manifest, "--project", "Thesis", "--chat-search", "thesis", "-o", out]) == 0
+    assert len(Bundle(out).conversations) == 2
+
+
+def test_manifest_without_parts_explains(tmp_path, capsys):
+    manifest = _write_split_export(tmp_path / "dl", include=())
+    assert main(["inspect", manifest]) == 2
+    err = capsys.readouterr().err
+    assert "download list" in err and "projects-000.zip" in err and "conversations-000.zip" in err

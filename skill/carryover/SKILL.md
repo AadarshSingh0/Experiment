@@ -24,7 +24,11 @@ to print the summary templates.
 ## Step 0: get the export
 
 The export must come from the **old** account: claude.ai → Settings → Privacy → Export data.
-An email arrives with a download link for a zip. Ask the user to upload that zip, or give you its path.
+An email arrives with a download link. Newer exports are split: the download is a small manifest
+`.json` listing several parts (`projects-000.zip`, `conversations-000.zip`, `memories-000.zip`, …).
+The user must open each link in a browser signed in to that account (the links expire and may
+work only once), then upload all the parts. Pass the manifest, or the folder holding the parts,
+wherever these steps say EXPORT.zip. Ask the user to upload that zip, or give you its path.
 If the zip is too big to upload, they can run the same CLI on their own computer: `pip install`
 the carryover repo, then use the same commands.
 

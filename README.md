@@ -47,6 +47,13 @@ pip install -e .            # add [api] to summarize with the Claude API
 
 1. In the **old** account, go to claude.ai → Settings → Privacy → **Export data**
    and download the zip from the email.
+
+   > **Got a small `.json` file instead of a zip?** Newer exports are split. That
+   > file is a *manifest* listing several parts (`projects-000.zip`,
+   > `conversations-000.zip`, `memories-000.zip`, …). Open each link inside it in a
+   > browser signed in to that account (links expire after 24 hours and may work
+   > only once). Save the parts in the same folder as the manifest, then pass the
+   > manifest or that folder to carryover instead of a single zip.
 2. See what's in it:
 
    ```bash
