@@ -440,3 +440,23 @@ def test_pack_all_reports_problems(export_zip, tmp_path, capsys):
     assert main(["pack-all", export_zip, str(plan), "-o", out, "--ignore-problems"]) == 0
     general = Bundle(os.path.join(out, "general-chats.carryover"))
     assert [c["title"] for c in general.conversations] == ["Thesis: chapter 3 structure"]
+
+
+def test_plan_from_pages(export_zip, tmp_path, capsys):
+    pages = tmp_path / "pages"
+    pages.mkdir()
+    # text as copied from claude.ai project pages: titles mixed with page noise
+    (pages / "Thesis Writing.txt").write_text(
+        "Thesis Writing\nChats\nThesis: chapter 3 structure\nLast message 2 months ago\n"
+        "Literature review G…\nUpdated 5 months ago\n")
+    (pages / "cooking.txt").write_text("Pasta recipe\n")
+    (pages / "Unknown project.txt").write_text("whatever\n")
+    plan = str(tmp_path / "plan.txt")
+    assert main(["plan", export_zip, "-o", plan, "--from-pages", str(pages)]) == 0
+    err = capsys.readouterr().err
+    assert "Unknown project.txt matches no project" in err
+    text = open(plan).read()
+    thesis = text.split("## Project: Thesis Writing")[1].split("## Project:")[0]
+    assert "Thesis: chapter 3 structure" in thesis and "Literature review GNN" in thesis  # cut-off title
+    assert "Pasta recipe" in text.split("## Project: Cooking")[1].split("## General")[0]
+    assert main(["pack-all", export_zip, plan, "-o", str(tmp_path / "out"), "--no-kits"]) == 0

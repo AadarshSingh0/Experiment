@@ -32,7 +32,7 @@ from carryover.summarize import (CONVERSATION_TEMPLATE, DEFAULT_EFFORT, DEFAULT_
                                  PROJECT_CONTEXT_TEMPLATE, SummarizeError, make_api_caller,
                                  summarize_bundle)
 from carryover.adapters.claude_ai import Project
-from carryover.plan import GENERAL, read_plan, write_plan
+from carryover.plan import GENERAL, from_pages, read_plan, write_plan
 from carryover.manual import HANDOFF_PROMPT, manual_chats, manual_project
 from carryover.util import excerpt, parse_day, short_day, slugify, unique_name
 
@@ -249,7 +249,17 @@ def cmd_plan(args) -> int:
     if os.path.exists(args.output) and not args.force:
         return _err(f"{args.output} already exists (use --force to replace it; your edits would be lost)")
     exp = ClaudeExport(args.export)
-    res = write_plan(exp, args.output)
+    groups = None
+    if args.from_pages:
+        groups, unknown, unmatched = from_pages(exp, args.from_pages)
+        for f in unknown:
+            print(f"warning: {f} matches no project name; rename it to the project's name", file=sys.stderr)
+        if unmatched:
+            print(f"note: {len(unmatched)} line(s) in the page files matched no chat title "
+                  "(usually page text like dates or buttons). First few:", file=sys.stderr)
+            for f, line in unmatched[:15]:
+                print(f"  {f}: {line[:90]}", file=sys.stderr)
+    res = write_plan(exp, args.output, groups)
     print(f"Plan written: {args.output}")
     for name, n in res["projects"].items():
         print(f"  {n:>4} chat(s) guessed for {name}")
@@ -426,6 +436,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("plan", help="draft which chats go with which project (editable file)")
     s.add_argument("export")
     s.add_argument("-o", "--output", default="plan.txt", help="plan file to write (default plan.txt)")
+    s.add_argument("--from-pages", metavar="FOLDER",
+                   help="folder with one text file per project (named after it), holding the chat list "
+                        "copied from that project's page on claude.ai")
     s.add_argument("--force", action="store_true", help="replace an existing plan file")
     s.set_defaults(func=cmd_plan)
 

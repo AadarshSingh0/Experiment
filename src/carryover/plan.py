@@ -99,8 +99,69 @@ def chat_line(c) -> str:
     return f"{c.id[:8]} | {short_day(c.created_at) or 'undated':10} | {len(c.messages):>4} msgs | {c.title}"
 
 
-def write_plan(export, path: str) -> dict:
-    groups = suggest(export)
+def _norm(text: str) -> str:
+    text = re.sub(r"[\u2026]|\.\.\.$", "", text or "")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _match_project(name: str, projects: list):
+    target = _norm(name)
+    slug = re.sub(r"[^a-z0-9]+", "", target)
+    for p in projects:
+        if _norm(p.name) == target or re.sub(r"[^a-z0-9]+", "", _norm(p.name)) == slug:
+            return p
+    return None
+
+
+def from_pages(export, folder: str) -> Tuple[Dict[str, List], List[str], List[Tuple[str, str]]]:
+    """Assign chats using text copied from each project's page on claude.ai.
+
+    ``folder`` holds one text file per project, named after the project
+    (e.g. ``Thesis.txt``), containing whatever was copied from that page.
+    Returns (groups, unknown_files, unmatched (file, line))."""
+    import os
+    projects = [p for p in export.projects if not p.is_starter]
+    groups: Dict[str, List] = {p.id: [] for p in projects}
+    by_title: Dict[str, List] = {}
+    for c in export.conversations:
+        by_title.setdefault(_norm(c.title), []).append(c)
+    titles = list(by_title)
+    assigned: Dict[str, str] = {}
+    unknown, unmatched = [], []
+    for fname in sorted(os.listdir(folder)):
+        full = os.path.join(folder, fname)
+        if fname.startswith(".") or not os.path.isfile(full):
+            continue
+        project = _match_project(os.path.splitext(fname)[0], projects)
+        if project is None:
+            unknown.append(fname)
+            continue
+        with open(full, encoding="utf-8", errors="replace") as fh:
+            lines = [ln.strip() for ln in fh.read().splitlines()]
+        for line in lines:
+            if len(line) < 3 or _NOISE.match(line) or line.lower() == _norm(project.name):
+                continue
+            key = _norm(line)
+            hits = by_title.get(key, [])
+            if not hits and len(key) >= 15:  # titles cut short on the page
+                cands = [t for t in titles if t.startswith(key)]
+                if len(cands) == 1:
+                    hits = by_title[cands[0]]
+            if not hits:
+                unmatched.append((fname, line))
+                continue
+            for c in hits:  # several chats can share a title (e.g. "Untitled chat")
+                if c.id not in assigned and c.messages:
+                    assigned[c.id] = project.id
+                    groups[project.id].append(c)
+    groups[GENERAL] = [c for c in export.conversations if c.messages and c.id not in assigned]
+    for g in groups.values():
+        g.sort(key=lambda c: c.created_at or "")
+    return groups, unknown, unmatched
+
+
+def write_plan(export, path: str, groups: Optional[Dict[str, List]] = None) -> dict:
+    groups = groups if groups is not None else suggest(export)
     lines = [
         "# carryover plan: which chats move with which project.",
         "#",
