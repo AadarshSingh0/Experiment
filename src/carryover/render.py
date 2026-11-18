@@ -7,7 +7,9 @@ from carryover.util import fence, short_day, short_time
 ROLE_LABEL = {"user": "User", "assistant": "Claude", "transcript": "Saved chat"}
 
 
-def conversation_markdown(conv: dict, heading_level: int = 1) -> str:
+def conversation_markdown(conv: dict, heading_level: int = 1, attachment_chars: int = -1) -> str:
+    """attachment_chars: -1 keeps attached files' full text, 0 lists names only,
+    N > 0 keeps the first N characters of each."""
     h = "#" * heading_level
     msgs = conv.get("messages") or []
     lines = [
@@ -31,6 +33,14 @@ def conversation_markdown(conv: dict, heading_level: int = 1) -> str:
         for att in m.get("attachments") or []:
             name = att.get("name") or "attachment"
             content = (att.get("content") or "").strip()
+            full_len = len(content)
+            if attachment_chars == 0 and content:
+                lines.append(f"**Attached file: {name}** ({full_len:,} characters; text left out)")
+                lines.append("")
+                continue
+            if attachment_chars > 0 and full_len > attachment_chars:
+                content = (content[:attachment_chars].rstrip()
+                           + f"\n[... {full_len - attachment_chars:,} more characters of this file left out ...]")
             if content:
                 lines.append(f"**Attached file: {name}**")
                 lines.append("")

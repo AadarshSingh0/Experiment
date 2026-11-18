@@ -26,7 +26,7 @@ import sys
 
 from carryover import __version__
 from carryover.adapters.claude_ai import PLATFORM, ClaudeExport, ExportError
-from carryover.adapters.claude_ai_kit import DEFAULT_CHUNK_CHARS, build_kit
+from carryover.adapters.claude_ai_kit import DEFAULT_ATTACHMENT_CHARS, DEFAULT_CHUNK_CHARS, build_kit
 from carryover.bundle import Bundle, BundleError, write_bundle, zip_dir
 from carryover.summarize import (CONVERSATION_TEMPLATE, DEFAULT_EFFORT, DEFAULT_MODEL,
                                  PROJECT_CONTEXT_TEMPLATE, SummarizeError, make_api_caller,
@@ -227,6 +227,7 @@ def cmd_unpack(args) -> int:
     with Bundle(args.bundle) as b:
         out = args.output or f"{slugify(b.name)}-import-kit"
         result = build_kit(b, out, include_transcripts=not args.no_transcripts,
+                           attachment_chars=args.attachment_chars,
                            chunk_chars=args.chunk_chars, context_note=not args.no_context_note,
                            overwrite=args.force)
     print(f"Import kit written: {out}")
@@ -312,7 +313,8 @@ def cmd_pack_all(args) -> int:
         if not args.no_kits:
             with Bundle(bundle_dir) as b:
                 kit_dir = os.path.join(args.output, slug + "-kit")
-                build_kit(b, kit_dir, include_transcripts=not args.no_transcripts, overwrite=args.force)
+                build_kit(b, kit_dir, include_transcripts=not args.no_transcripts,
+                          attachment_chars=args.attachment_chars, overwrite=args.force)
             if args.zip:
                 zip_dir(kit_dir, kit_dir + ".zip")
             line += f" -> {kit_dir}"
@@ -425,6 +427,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--target", default="claude-ai", choices=["claude-ai"])
     s.add_argument("-o", "--output", help="kit directory (default: <project>-import-kit)")
     s.add_argument("--no-transcripts", action="store_true", help="leave full transcripts out of the kit")
+    s.add_argument("--attachment-chars", type=int, default=DEFAULT_ATTACHMENT_CHARS, metavar="N",
+                   help="characters kept from each file attached in old chats "
+                        f"(default {DEFAULT_ATTACHMENT_CHARS}; 0 = names only, -1 = full text)")
     s.add_argument("--chunk-chars", type=int, default=DEFAULT_CHUNK_CHARS,
                    help="max characters per transcript file")
     s.add_argument("--no-context-note", action="store_true",
@@ -448,6 +453,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-o", "--output", required=True, help="folder for all bundles and kits")
     s.add_argument("--no-kits", action="store_true", help="only write bundles")
     s.add_argument("--no-transcripts", action="store_true", help="leave full transcripts out of kits")
+    s.add_argument("--attachment-chars", type=int, default=DEFAULT_ATTACHMENT_CHARS, metavar="N",
+                   help="characters kept from each file attached in old chats "
+                        f"(default {DEFAULT_ATTACHMENT_CHARS}; 0 = names only, -1 = full text)")
     s.add_argument("--zip", action="store_true", help="also zip each kit")
     s.add_argument("--include-account-memory", action="store_true",
                    help="add account-wide memory to the General chats kit")

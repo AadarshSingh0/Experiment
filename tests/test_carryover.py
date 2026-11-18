@@ -470,3 +470,17 @@ def test_plan_star_takes_remaining_chats(export_zip, tmp_path):
     assert main(["pack-all", export_zip, str(plan), "-o", out, "--no-kits"]) == 0
     general = Bundle(os.path.join(out, "general-chats.carryover"))
     assert [c["title"] for c in general.conversations] == ["Thesis: chapter 3 structure"]
+
+
+def test_kit_trims_attachments(export_zip, tmp_path):
+    out = str(tmp_path / "b")
+    pack(export_zip, out, "--chat-search", "thesis")
+    def transcript(*extra):
+        kit = str(tmp_path / ("kit" + "".join(extra)))
+        assert main(["unpack", out, "-o", kit, *extra]) == 0
+        return open(os.path.join(kit, "3_upload_to_project_knowledge", "zz_chat_transcripts_part01.md")).read()
+    assert "Draft text with" in transcript()  # short file: kept
+    trimmed = transcript("--attachment-chars", "5")
+    assert "Draft" in trimmed and "more characters of this file left out" in trimmed
+    names = transcript("--attachment-chars", "0")
+    assert "Draft text" not in names and "ch3_draft.txt" in names and "text left out" in names

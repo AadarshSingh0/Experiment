@@ -29,6 +29,8 @@ from carryover.util import excerpt, safe_filename, short_day, unique_name
 
 KNOWLEDGE_DIR = "3_upload_to_project_knowledge"
 DEFAULT_CHUNK_CHARS = 300_000
+# Attached files are usually papers/drafts the user still has; keep a preview only.
+DEFAULT_ATTACHMENT_CHARS = 3_000
 
 def history_note(has_summaries: bool, has_transcripts: bool) -> str:
     lines = ["## Carried-over history",
@@ -106,8 +108,9 @@ def _summaries_doc(bundle: Bundle) -> str:
     return "\n".join(out)
 
 
-def _transcript_parts(bundle: Bundle, chunk_chars: int) -> List[str]:
-    blocks = [(c, conversation_markdown(bundle.conversation(c), heading_level=2)) for c in bundle.conversations]
+def _transcript_parts(bundle: Bundle, chunk_chars: int, attachment_chars: int = DEFAULT_ATTACHMENT_CHARS) -> List[str]:
+    blocks = [(c, conversation_markdown(bundle.conversation(c), heading_level=2, attachment_chars=attachment_chars))
+              for c in bundle.conversations]
     groups: List[list] = []
     current: list = []
     size = 0
@@ -131,6 +134,7 @@ def _transcript_parts(bundle: Bundle, chunk_chars: int) -> List[str]:
 
 def build_kit(bundle: Bundle, out_dir: str, include_transcripts: bool = True,
               chunk_chars: int = DEFAULT_CHUNK_CHARS, context_note: bool = True,
+              attachment_chars: int = DEFAULT_ATTACHMENT_CHARS,
               overwrite: bool = False) -> dict:
     if os.path.exists(out_dir):
         if not overwrite:
@@ -178,7 +182,7 @@ def build_kit(bundle: Bundle, out_dir: str, include_transcripts: bool = True,
         shutil.copyfile(bundle.path(k["path"]), os.path.join(kdir, name))
         files.append(name)
     if include_transcripts and bundle.conversations:
-        for i, text in enumerate(_transcript_parts(bundle, chunk_chars), 1):
+        for i, text in enumerate(_transcript_parts(bundle, chunk_chars, attachment_chars), 1):
             name = f"zz_chat_transcripts_part{i:02d}.md"
             _write(os.path.join(kdir, name), text)
             files.append(name)
