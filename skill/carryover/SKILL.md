@@ -28,6 +28,23 @@ An email arrives with a download link for a zip. Ask the user to upload that zip
 If the zip is too big to upload, they can run the same CLI on their own computer: `pip install`
 the carryover repo, then use the same commands.
 
+### No "Export data" button?
+
+Organization accounts (Team, Enterprise or Education) show the button only if
+an owner turned on "Allow members to export their own data". If the user can't
+export, use no-export mode:
+
+1. Run `python3 scripts/run.py handoff-prompt` and give the user the prompt. They
+   paste it into a new chat **inside the old project** and save Claude's answer as `handoff.md`.
+2. Ask them to copy the project's instructions into a file and download its
+   knowledge files. Optionally, they can save key chats as `.md` files.
+3. Once they upload those files here, run:
+   `python3 scripts/run.py from-manual --name "NAME" --instructions instructions.md --handoff handoff.md --knowledge FILES_DIR [--chat CHATS_DIR] -o project.carryover`
+4. Skip to Step 5 (unpack). The handoff document already serves as `PROJECT_CONTEXT.md`.
+
+If they're moving from a work or university account to a personal one, mention
+that the organization may have rules about that.
+
 ## Step 1: choose the project
 
 ```bash

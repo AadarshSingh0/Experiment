@@ -291,3 +291,56 @@ def test_cli_status_and_template(export_zip, tmp_path, capsys):
     assert st["chats"] == 3 and st["summaries_done"] == 0 and len(st["missing"]) == 3
     assert main(["template", "project"]) == 0
     assert "## Open threads" in capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- no-export mode
+
+def test_handoff_prompt(capsys):
+    assert main(["handoff-prompt"]) == 0
+    out = capsys.readouterr().out
+    assert "## Chat summaries" in out and "## Open threads" in out
+    assert "{name}" not in out and "{count}" not in out
+
+
+def test_from_manual(tmp_path):
+    (tmp_path / "instr.md").write_text("Be concise.")
+    (tmp_path / "handoff.md").write_text("# Project context: Thesis\n\n## Overview\nGNN thesis.\n")
+    kdir = tmp_path / "files"
+    kdir.mkdir()
+    (kdir / "outline.md").write_text("# Outline")
+    (kdir / "paper.pdf").write_bytes(b"%PDF-1.4 \x00\xff binary")
+    (kdir / ".DS_Store").write_bytes(b"junk")
+    chats = tmp_path / "chats"
+    chats.mkdir()
+    (chats / "chapter_3_plan.md").write_text("User: plan ch3\nClaude: three sections")
+    out = str(tmp_path / "b")
+    assert main(["from-manual", "--name", "Thesis", "--instructions", str(tmp_path / "instr.md"),
+                 "--handoff", str(tmp_path / "handoff.md"), "--knowledge", str(kdir),
+                 "--memory", "Deadline in December", "--chat", str(chats), "-o", out]) == 0
+    with Bundle(out) as b:
+        assert b.instructions == "Be concise."
+        assert b.project_context.startswith("# Project context: Thesis")
+        assert sorted(k["original_name"] for k in b.knowledge) == ["outline.md", "paper.pdf"]
+        assert b.project_memory == "Deadline in December"
+        assert b.conversations[0]["title"] == "chapter 3 plan"
+    kit = str(tmp_path / "kit")
+    assert main(["unpack", out, "-o", kit]) == 0
+    kd = os.path.join(kit, "3_upload_to_project_knowledge")
+    with open(os.path.join(kd, "paper.pdf"), "rb") as fh:
+        assert fh.read() == b"%PDF-1.4 \x00\xff binary"  # binary kept intact
+    assert open(os.path.join(kd, "00_PROJECT_CONTEXT.md")).read().startswith("# Project context: Thesis")
+    assert "Saved chat" in open(os.path.join(kd, "zz_chat_transcripts_part01.md")).read()
+    assert "No AI summaries" not in open(os.path.join(kit, "START_HERE.md")).read()
+    assert "00_PROJECT_CONTEXT.md" in open(os.path.join(kit, "2_custom_instructions.md")).read()
+
+
+def test_from_manual_handoff_only(tmp_path):
+    (tmp_path / "h.md").write_text("# Project context: X\n")
+    out = str(tmp_path / "b")
+    assert main(["from-manual", "--name", "X", "--handoff", str(tmp_path / "h.md"), "-o", out]) == 0
+    kit = str(tmp_path / "kit")
+    assert main(["unpack", out, "-o", kit]) == 0
+    instr = open(os.path.join(kit, "2_custom_instructions.md")).read()
+    assert "00_PROJECT_CONTEXT.md" in instr and "01_CHAT_SUMMARIES" not in instr
+    assert main(["from-manual", "--name", "Y", "--knowledge", str(tmp_path / "missing"),
+                 "-o", str(tmp_path / "c")]) == 2

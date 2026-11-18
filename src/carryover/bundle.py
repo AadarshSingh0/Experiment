@@ -26,7 +26,7 @@ from typing import List, Optional
 
 from carryover import BUNDLE_FORMAT, BUNDLE_FORMAT_VERSION, __version__
 from carryover.render import conversation_markdown
-from carryover.util import now_iso, short_day, slugify, text_filename, unique_name
+from carryover.util import now_iso, safe_filename, short_day, slugify, text_filename, unique_name
 
 PROJECT_CONTEXT = "summaries/PROJECT_CONTEXT.md"
 
@@ -49,6 +49,7 @@ def write_bundle(
     account_memory: str = "",
     options: Optional[dict] = None,
     overwrite: bool = False,
+    project_context: str = "",
 ) -> str:
     """Write a bundle directory. ``project`` / ``conversations`` are adapter
     objects (see adapters.claude_ai.Project / Conversation)."""
@@ -74,12 +75,20 @@ def write_bundle(
     knowledge = []
     taken: set = set()
     for doc in project.docs:
-        name = unique_name(text_filename(doc.name), taken)
-        _write(os.path.join(out_dir, "knowledge", name), doc.content)
+        if doc.data is not None:
+            name = unique_name(safe_filename(doc.name), taken)
+            os.makedirs(os.path.join(out_dir, "knowledge"), exist_ok=True)
+            with open(os.path.join(out_dir, "knowledge", name), "wb") as fh:
+                fh.write(doc.data)
+            size = len(doc.data)
+        else:
+            name = unique_name(text_filename(doc.name), taken)
+            _write(os.path.join(out_dir, "knowledge", name), doc.content)
+            size = len(doc.content)
         knowledge.append({
             "path": f"knowledge/{name}",
             "original_name": doc.name,
-            "chars": len(doc.content),
+            "chars": size,
             "created_at": doc.created_at,
         })
 
@@ -102,6 +111,8 @@ def write_bundle(
             "summary": f"summaries/{stem}.md",
         })
     os.makedirs(os.path.join(out_dir, "summaries"), exist_ok=True)
+    if project_context.strip():
+        _write(os.path.join(out_dir, *PROJECT_CONTEXT.split("/")), project_context.rstrip() + "\n")
 
     manifest = {
         "format": BUNDLE_FORMAT,

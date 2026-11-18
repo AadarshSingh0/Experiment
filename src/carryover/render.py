@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from carryover.util import fence, short_day, short_time
 
-ROLE_LABEL = {"user": "User", "assistant": "Claude"}
+ROLE_LABEL = {"user": "User", "assistant": "Claude", "transcript": "Saved chat"}
 
 
 def conversation_markdown(conv: dict, heading_level: int = 1) -> str:

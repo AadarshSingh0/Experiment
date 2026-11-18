@@ -79,6 +79,7 @@ class KnowledgeDoc:
     content: str
     created_at: Optional[str] = None
     source_id: Optional[str] = None
+    data: Optional[bytes] = None  # original file bytes (manual mode); content is then unused
 
 
 @dataclass

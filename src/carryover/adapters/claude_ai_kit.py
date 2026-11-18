@@ -30,13 +30,17 @@ from carryover.util import excerpt, safe_filename, short_day, unique_name
 KNOWLEDGE_DIR = "3_upload_to_project_knowledge"
 DEFAULT_CHUNK_CHARS = 300_000
 
-CONTEXT_NOTE = """\
-## Carried-over history
-This project was moved here from another account. The project knowledge holds its history:
-- `00_PROJECT_CONTEXT.md`: read this first. Goals, decisions, current state and open threads.
-- `01_CHAT_SUMMARIES.md`: one summary per earlier chat, oldest first.
-- `zz_chat_transcripts_partNN.md`: the full earlier chats. Search them when exact wording or details matter.
-Treat this as the project's own history and continue from where it left off."""
+def history_note(has_summaries: bool, has_transcripts: bool) -> str:
+    lines = ["## Carried-over history",
+             "This project was moved here from another account. The project knowledge holds its history:",
+             "- `00_PROJECT_CONTEXT.md`: read this first. Goals, decisions, current state and open threads."]
+    if has_summaries:
+        lines.append("- `01_CHAT_SUMMARIES.md`: one summary per earlier chat, oldest first.")
+    if has_transcripts:
+        lines.append("- `zz_chat_transcripts_partNN.md`: the full earlier chats. "
+                     "Search them when exact wording or details matter.")
+    lines.append("Treat this as the project's own history and continue from where it left off.")
+    return "\n".join(lines)
 
 
 def _write(path: str, text: str) -> None:
@@ -145,8 +149,10 @@ def build_kit(bundle: Bundle, out_dir: str, include_transcripts: bool = True,
 
     # 2. custom instructions
     instructions = bundle.instructions.strip()
-    if context_note and bundle.conversations:
-        instructions = (instructions + "\n\n" if instructions else "") + CONTEXT_NOTE
+    has_history = bool(bundle.conversations or bundle.project_context)
+    if context_note and has_history:
+        note = history_note(bool(bundle.conversations), include_transcripts and bool(bundle.conversations))
+        instructions = (instructions + "\n\n" if instructions else "") + note
     _write(os.path.join(out_dir, "2_custom_instructions.md"), instructions or "(This project had no custom instructions.)")
 
     # 3. knowledge

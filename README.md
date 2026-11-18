@@ -80,6 +80,40 @@ pip install -e .            # add [api] to summarize with the Claude API
    carryover unpack thesis.carryover --zip
    ```
 
+### No "Export data" button?
+
+If your account belongs to an organization (Team, Enterprise or Education),
+the export button only appears when an owner turns on *"Allow members to
+export their own data"*. Without it, use no-export mode:
+
+1. Print the handoff prompt:
+
+   ```bash
+   carryover handoff-prompt
+   ```
+
+2. Paste it into a **new chat inside the old project**. Claude writes a handoff
+   document covering goals, decisions, state, per-chat summaries and memory.
+   Save the answer as `handoff.md`. Claude can cover past chats only if chat
+   search or memory is enabled for that account. Otherwise it works from the
+   project's instructions and knowledge, and says so.
+3. By hand, copy the project's instructions into `instructions.md` and
+   download its knowledge files into a folder.
+   Optionally, save important chats as `.md` files by copy-pasting them.
+4. Build the bundle and the kit:
+
+   ```bash
+   carryover from-manual --name "Thesis" --instructions instructions.md \
+       --handoff handoff.md --knowledge files/ --chat saved-chats/ -o thesis.carryover
+   ```
+
+   ```bash
+   carryover unpack thesis.carryover --zip
+   ```
+
+Moving from a work or university account to a personal one? Check your
+organization's rules on taking its data elsewhere first.
+
 ### Commands
 
 | Command | Purpose |
@@ -90,6 +124,8 @@ pip install -e .            # add [api] to summarize with the Claude API
 | `template conversation\|project` | Print a summary template |
 | `summarize BUNDLE --api [--model] [--effort] [--workers] [--force]` | Fill summaries with the Claude API |
 | `unpack BUNDLE [-o DIR] [--no-transcripts] [--chunk-chars N] [--zip]` | Bundle → claude.ai import kit |
+| `handoff-prompt` | Prompt to paste into the old project (no-export mode) |
+| `from-manual --name N [--instructions F] [--handoff F] [--knowledge P] [--memory F] [--chat P]` | Hand-copied pieces → bundle |
 
 Chat selectors can be combined: `--chat ID`, `--chats-file FILE`,
 `--chat-title REGEX`, `--chat-search TEXT`, `--all-chats`, and the date filters

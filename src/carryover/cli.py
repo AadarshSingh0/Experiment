@@ -6,6 +6,10 @@
     carryover template  conversation|project    print a summary template
     carryover summarize BUNDLE --api            fill summaries via the Claude API
     carryover unpack    BUNDLE                  bundle -> claude.ai import kit
+
+No "Export data" button (e.g. an organization account)?
+    carryover handoff-prompt                    prompt to paste into the old project
+    carryover from-manual --name NAME ...       hand-copied pieces -> bundle
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from carryover.bundle import Bundle, BundleError, write_bundle, zip_dir
 from carryover.summarize import (CONVERSATION_TEMPLATE, DEFAULT_EFFORT, DEFAULT_MODEL,
                                  PROJECT_CONTEXT_TEMPLATE, SummarizeError, make_api_caller,
                                  summarize_bundle)
+from carryover.manual import HANDOFF_PROMPT, manual_chats, manual_project
 from carryover.util import excerpt, parse_day, short_day, slugify
 
 
@@ -231,6 +236,46 @@ def cmd_unpack(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# no-export mode
+# --------------------------------------------------------------------------- #
+
+def cmd_handoff_prompt(args) -> int:
+    print(HANDOFF_PROMPT)
+    return 0
+
+
+def _maybe_file(value):
+    """Accept either a path to a file or literal text."""
+    if value and os.path.isfile(value):
+        with open(value, encoding="utf-8", errors="replace") as fh:
+            return fh.read()
+    return value or ""
+
+
+def cmd_from_manual(args) -> int:
+    handoff = _maybe_file(args.handoff)
+    if args.handoff and not handoff.strip():
+        return _err(f"{args.handoff} is empty")
+    project = manual_project(
+        name=args.name, description=_maybe_file(args.description),
+        instructions=_maybe_file(args.instructions), knowledge=args.knowledge or [],
+        memory=_maybe_file(args.memory),
+    )
+    chats = manual_chats(args.chat or [])
+    out = args.output or f"{slugify(args.name)}.carryover"
+    write_bundle(out, project, chats, source={"platform": "manual"}, project_context=handoff,
+                 options={"mode": "manual"}, overwrite=args.force)
+    print(f"Bundle written: {out}")
+    print(f"  {len(project.docs)} knowledge file(s), {len(chats)} saved chat(s), "
+          f"handoff document: {'yes' if handoff.strip() else 'no'}, memory: {'yes' if project.memory else 'no'}")
+    if not handoff.strip():
+        print("  tip: run `carryover handoff-prompt`, paste it into the old project, and pass the answer "
+              "with --handoff", file=sys.stderr)
+    print(f"Next: carryover unpack {out}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="carryover", description="Move an AI project between accounts.")
@@ -297,6 +342,23 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--zip", action="store_true", help="also write <kit>.zip")
     s.add_argument("--force", action="store_true", help="replace an existing kit")
     s.set_defaults(func=cmd_unpack)
+
+    s = sub.add_parser("handoff-prompt", help="print the prompt to paste into the old project (no-export mode)")
+    s.set_defaults(func=cmd_handoff_prompt)
+
+    s = sub.add_parser("from-manual", help="build a bundle from hand-copied pieces (no-export mode)")
+    s.add_argument("--name", required=True, help="project name")
+    s.add_argument("--description", help="description text, or a file containing it")
+    s.add_argument("--instructions", help="file with the copied custom instructions (or the text)")
+    s.add_argument("--handoff", help="file with Claude's answer to `carryover handoff-prompt`")
+    s.add_argument("--knowledge", action="append", metavar="PATH",
+                   help="knowledge file or folder (repeatable)")
+    s.add_argument("--memory", help="file with memory text to carry over (or the text)")
+    s.add_argument("--chat", action="append", metavar="PATH",
+                   help="a chat you copied into a .md/.txt file, or a folder of them (repeatable)")
+    s.add_argument("-o", "--output", help="bundle directory (default: <name>.carryover)")
+    s.add_argument("--force", action="store_true", help="replace an existing bundle")
+    s.set_defaults(func=cmd_from_manual)
     return p
 
 
