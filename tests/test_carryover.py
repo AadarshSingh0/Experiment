@@ -484,3 +484,14 @@ def test_kit_trims_attachments(export_zip, tmp_path):
     assert "Draft" in trimmed and "more characters of this file left out" in trimmed
     names = transcript("--attachment-chars", "0")
     assert "Draft text" not in names and "ch3_draft.txt" in names and "text left out" in names
+
+
+def test_memory_command(export_zip, tmp_path, capsys):
+    assert main(["memory", export_zip]) == 0
+    assert "PhD student in Bangalore" in capsys.readouterr().out
+    assert main(["memory", export_zip, "--project", "Thesis"]) == 0
+    assert "Thesis deadline" in capsys.readouterr().out
+    out = tmp_path / "m.md"
+    assert main(["memory", export_zip, "-o", str(out)]) == 0
+    assert "Account memory" in out.read_text()
+    assert main(["memory", export_zip, "--project", "Cooking"]) == 2

@@ -243,6 +243,34 @@ def cmd_unpack(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# memory
+# --------------------------------------------------------------------------- #
+
+def cmd_memory(args) -> int:
+    exp = ClaudeExport(args.export)
+    if not exp.has_memory_file:
+        return _err("this export has no memories file")
+    parts = []
+    if args.project:
+        p = exp.find_project(args.project)
+        if not p.memory:
+            return _err(f"project {p.name!r} has no memory in this export")
+        parts.append(f"# Project memory: {p.name}\n\n{p.memory}\n")
+    else:
+        if not exp.account_memory:
+            return _err("this export has no account-wide memory")
+        parts.append(f"# Account memory (what Claude knew about me)\n\n{exp.account_memory}\n")
+    text = "\n".join(parts)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        print(f"Memory written: {args.output} ({len(text):,} characters)")
+    else:
+        print(text)
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # plan / pack-all
 # --------------------------------------------------------------------------- #
 
@@ -437,6 +465,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--zip", action="store_true", help="also write <kit>.zip")
     s.add_argument("--force", action="store_true", help="replace an existing kit")
     s.set_defaults(func=cmd_unpack)
+
+    s = sub.add_parser("memory", help="print the account-wide (or one project's) memory from an export")
+    s.add_argument("export")
+    s.add_argument("--project", help="print this project's memory instead of the account memory")
+    s.add_argument("-o", "--output", help="write to this file instead of the screen")
+    s.set_defaults(func=cmd_memory)
 
     s = sub.add_parser("plan", help="draft which chats go with which project (editable file)")
     s.add_argument("export")
